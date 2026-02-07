@@ -20,6 +20,12 @@ public struct ToolDefinition: Sendable {
     }
 }
 
+public enum ToolImageDeliveryMode: Sendable {
+    case inlineBase64
+    case filePath
+    case both
+}
+
 public struct ToolCallResult: Sendable {
     public let structuredContent: JSONValue
     public let text: String
@@ -35,15 +41,36 @@ public struct ToolCallResult: Sendable {
         self.imageMimeType = imageMimeType
     }
 
-    public func asJSONValue() -> JSONValue {
+    public func asJSONValue(imageDeliveryMode: ToolImageDeliveryMode = .inlineBase64) -> JSONValue {
         var contentBlocks: [JSONValue] = []
+        var effectiveStructuredContent = structuredContent
 
         if let imageBase64, let imageMimeType {
-            contentBlocks.append(.object([
-                "type": .string("image"),
-                "data": .string(imageBase64),
-                "mimeType": .string(imageMimeType),
-            ]))
+            switch imageDeliveryMode {
+            case .inlineBase64:
+                contentBlocks.append(Self.inlineImageBlock(base64: imageBase64, mimeType: imageMimeType))
+            case .filePath:
+                if let imagePath = Self.materializeImageFile(base64: imageBase64, mimeType: imageMimeType) {
+                    effectiveStructuredContent = Self.mergeImagePath(
+                        imagePath,
+                        mimeType: imageMimeType,
+                        into: effectiveStructuredContent
+                    )
+                    contentBlocks.append(Self.imagePathTextBlock(path: imagePath))
+                } else {
+                    contentBlocks.append(Self.inlineImageBlock(base64: imageBase64, mimeType: imageMimeType))
+                }
+            case .both:
+                contentBlocks.append(Self.inlineImageBlock(base64: imageBase64, mimeType: imageMimeType))
+                if let imagePath = Self.materializeImageFile(base64: imageBase64, mimeType: imageMimeType) {
+                    effectiveStructuredContent = Self.mergeImagePath(
+                        imagePath,
+                        mimeType: imageMimeType,
+                        into: effectiveStructuredContent
+                    )
+                    contentBlocks.append(Self.imagePathTextBlock(path: imagePath))
+                }
+            }
         }
 
         contentBlocks.append(.object([
@@ -55,8 +82,54 @@ public struct ToolCallResult: Sendable {
             "content": .array(contentBlocks),
             "isError": .bool(isError),
         ]
-        result["structuredContent"] = structuredContent
+        result["structuredContent"] = effectiveStructuredContent
         return .object(result)
+    }
+
+    private static func inlineImageBlock(base64: String, mimeType: String) -> JSONValue {
+        .object([
+            "type": .string("image"),
+            "data": .string(base64),
+            "mimeType": .string(mimeType),
+        ])
+    }
+
+    private static func imagePathTextBlock(path: String) -> JSONValue {
+        .object([
+            "type": .string("text"),
+            "text": .string("Image saved to \(path)"),
+        ])
+    }
+
+    private static func mergeImagePath(_ path: String, mimeType: String, into structuredContent: JSONValue) -> JSONValue {
+        if var object = structuredContent.objectValue {
+            object["imagePath"] = .string(path)
+            object["imageMimeType"] = .string(mimeType)
+            return .object(object)
+        }
+        return .object([
+            "payload": structuredContent,
+            "imagePath": .string(path),
+            "imageMimeType": .string(mimeType),
+        ])
+    }
+
+    private static func materializeImageFile(base64: String, mimeType: String) -> String? {
+        guard let data = Data(base64Encoded: base64) else {
+            return nil
+        }
+
+        let fileManager = FileManager.default
+        let directoryURL = fileManager.temporaryDirectory.appendingPathComponent("macos-mcp-operator-images", isDirectory: true)
+        do {
+            try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+            let fileExtension = mimeType == "image/jpeg" ? "jpg" : "png"
+            let fileURL = directoryURL.appendingPathComponent(UUID().uuidString).appendingPathExtension(fileExtension)
+            try data.write(to: fileURL, options: .atomic)
+            return fileURL.path
+        } catch {
+            return nil
+        }
     }
 }
 

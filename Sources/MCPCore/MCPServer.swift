@@ -30,6 +30,7 @@ public actor MCPServer {
 
     private var initialized = false
     private var negotiatedVersion = MCPVersioning.latest
+    private var imageDeliveryMode: ToolImageDeliveryMode = .both
     private var inFlight: [JSONRPCID: Task<Void, Never>] = [:]
 
     public init(name: String, version: String, writer: MCPResponseWriter, toolExecutor: ToolExecutorProtocol) {
@@ -123,7 +124,7 @@ public actor MCPServer {
                 }
                 let (name, arguments) = try decodeToolCallParams(request.params)
                 let result = try await toolExecutor.callTool(name: name, arguments: arguments)
-                return JSONRPCResponse(id: id, result: result.asJSONValue())
+                return JSONRPCResponse(id: id, result: result.asJSONValue(imageDeliveryMode: imageDeliveryMode))
             default:
                 return JSONRPCResponse(
                     id: id,
@@ -156,6 +157,7 @@ public actor MCPServer {
             throw MCPServerError.invalidParams("initialize.params.protocolVersion is required")
         }
 
+        imageDeliveryMode = pickImageDeliveryMode(from: object)
         negotiatedVersion = MCPVersioning.negotiate(clientRequestedVersion: requestedVersion)
         let result: JSONValue = .object([
             "protocolVersion": .string(negotiatedVersion),
@@ -170,6 +172,30 @@ public actor MCPServer {
             ]),
         ])
         return JSONRPCResponse(id: id, result: result)
+    }
+
+    private func pickImageDeliveryMode(from initializeParams: [String: JSONValue]) -> ToolImageDeliveryMode {
+        let clientName = extractClientName(from: initializeParams)?.lowercased() ?? ""
+        if clientName.contains("claude") {
+            return .filePath
+        }
+        if clientName.contains("codex") || clientName.contains("openai") {
+            return .inlineBase64
+        }
+        return .both
+    }
+
+    private func extractClientName(from initializeParams: [String: JSONValue]) -> String? {
+        if let name = initializeParams["clientInfo"]?.objectValue?["name"]?.stringValue, !name.isEmpty {
+            return name
+        }
+        if let name = initializeParams["client_info"]?.objectValue?["name"]?.stringValue, !name.isEmpty {
+            return name
+        }
+        if let name = initializeParams["clientName"]?.stringValue, !name.isEmpty {
+            return name
+        }
+        return nil
     }
 
     private func decodeToolCallParams(_ params: JSONValue?) throws -> (String, JSONValue?) {

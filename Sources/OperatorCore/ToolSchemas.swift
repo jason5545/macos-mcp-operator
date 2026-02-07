@@ -129,7 +129,7 @@ public enum ToolSchemas {
             ),
             ToolDefinition(
                 name: "screen_capture",
-                description: "Capture screen image as base64 PNG.",
+                description: "Capture screen image; response image delivery is client-aware for Codex/Claude compatibility.",
                 inputSchema: ToolSchema(
                     properties: [
                         "region": .object(required: ["x", "y", "width", "height"], properties: [
