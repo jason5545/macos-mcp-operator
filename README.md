@@ -103,6 +103,38 @@ Audit log path:
 20. `permissions_open_settings`
 21. `automation_stop`
 
+## Focus behavior and target controls
+
+Input tools can now target a specific app/window without always forcing a foreground switch.
+
+- `focus_window`
+  - New optional flag: `activate_all_windows` (default: `false`)
+  - Set `true` to use legacy behavior that activates all windows of the target app.
+- `mouse_click`, `mouse_drag`, `mouse_scroll`, `text_input`, `key_chord`
+  - New optional fields:
+    - `bundle_id`
+    - `window_id`
+    - `auto_focus` (default: `false`)
+    - `launch_if_needed` (default: `false`)
+  - Behavior:
+    - If no target is provided, command applies to current frontmost app (legacy behavior).
+    - If target is provided and not frontmost:
+      - `auto_focus=false` -> returns `TARGET_NOT_FRONTMOST`.
+      - `auto_focus=true` -> focuses target first, then executes.
+
+Example:
+
+```json
+{
+  "name": "text_input",
+  "arguments": {
+    "text": "hello",
+    "bundle_id": "com.apple.Notes",
+    "auto_focus": true
+  }
+}
+```
+
 ## Scripts
 
 - `scripts/package-host-app.sh`

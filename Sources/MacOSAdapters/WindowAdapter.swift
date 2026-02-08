@@ -47,10 +47,15 @@ public final class SystemWindowAdapter: WindowAdapting, @unchecked Sendable {
         }
     }
 
-    public func focusWindow(windowID: UInt32?, bundleID: String?, launchIfNeeded: Bool) async throws -> String? {
+    public func focusWindow(
+        windowID: UInt32?,
+        bundleID: String?,
+        launchIfNeeded: Bool,
+        activateAllWindows: Bool
+    ) async throws -> String? {
         if let bundleID {
             if let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first {
-                return activate(app: app) ? bundleID : nil
+                return activate(app: app, activateAllWindows: activateAllWindows) ? bundleID : nil
             }
 
             guard launchIfNeeded else {
@@ -66,7 +71,7 @@ public final class SystemWindowAdapter: WindowAdapting, @unchecked Sendable {
             _ = try await NSWorkspace.shared.openApplication(at: appURL, configuration: configuration)
 
             if let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first {
-                return activate(app: app) ? bundleID : nil
+                return activate(app: app, activateAllWindows: activateAllWindows) ? bundleID : nil
             }
 
             return bundleID
@@ -89,7 +94,7 @@ public final class SystemWindowAdapter: WindowAdapting, @unchecked Sendable {
             throw OperatorError("Application \(bundleID) is not running")
         }
 
-        _ = activate(app: app)
+        _ = activate(app: app, activateAllWindows: activateAllWindows)
         return bundleID
     }
 
@@ -97,7 +102,8 @@ public final class SystemWindowAdapter: WindowAdapting, @unchecked Sendable {
         NSWorkspace.shared.frontmostApplication?.bundleIdentifier
     }
 
-    private func activate(app: NSRunningApplication) -> Bool {
-        app.activate(options: [.activateAllWindows])
+    private func activate(app: NSRunningApplication, activateAllWindows: Bool) -> Bool {
+        let options: NSApplication.ActivationOptions = activateAllWindows ? [.activateAllWindows] : []
+        return app.activate(options: options)
     }
 }

@@ -36,15 +36,43 @@ private actor MockInputAdapter: InputAdapting {
 }
 
 private actor MockWindowAdapter: WindowAdapting {
-    let frontmost: String?
+    private var frontmost: String?
+    private let windows: [WindowDescriptor]
+    private(set) var focusCalls: Int = 0
+    private(set) var lastActivateAllWindows: Bool?
 
-    init(frontmost: String?) {
+    init(frontmost: String?, windows: [WindowDescriptor] = []) {
         self.frontmost = frontmost
+        self.windows = windows
     }
 
-    func listWindows(includeMinimized _: Bool) async -> [WindowDescriptor] { [] }
-    func focusWindow(windowID _: UInt32?, bundleID _: String?, launchIfNeeded _: Bool) async throws -> String? { frontmost }
+    func listWindows(includeMinimized _: Bool) async -> [WindowDescriptor] { windows }
+
+    func focusWindow(
+        windowID: UInt32?,
+        bundleID: String?,
+        launchIfNeeded _: Bool,
+        activateAllWindows: Bool
+    ) async throws -> String? {
+        focusCalls += 1
+        lastActivateAllWindows = activateAllWindows
+
+        if let bundleID {
+            frontmost = bundleID
+            return bundleID
+        }
+
+        if let windowID, let window = windows.first(where: { $0.windowID == windowID }) {
+            frontmost = window.bundleID
+            return window.bundleID
+        }
+
+        return frontmost
+    }
+
     func frontmostBundleID() async -> String? { frontmost }
+    func focusCallCount() -> Int { focusCalls }
+    func lastActivateAllWindowsValue() -> Bool? { lastActivateAllWindows }
 }
 
 private actor MockCaptureAdapter: CaptureAdapting {
@@ -283,5 +311,126 @@ final class OperatorCoreTests: XCTestCase {
             XCTAssertEqual(error.code, JSONRPCErrorCode.toolExecutionFailed)
             XCTAssertTrue(error.message.contains("BROKER_UNAVAILABLE"))
         }
+    }
+
+    func testTextInputTargetWithoutAutoFocusFailsWhenNotFrontmost() async throws {
+        let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDirectory) }
+
+        let configStore = ConfigStore(configURL: tempDirectory.appendingPathComponent("config.json"))
+        try await configStore.save(AppConfig(defaultMode: .restricted, appWhitelist: ["com.apple.Terminal", "com.apple.Notes"]))
+
+        let inputAdapter = MockInputAdapter()
+        let windowAdapter = MockWindowAdapter(frontmost: "com.apple.Terminal")
+        let executor = OperatorToolExecutor(
+            configStore: configStore,
+            auditLogger: AuditLogger(enabled: false, logURL: tempDirectory.appendingPathComponent("audit.jsonl")),
+            safetyEngine: SafetyEngine(mode: .restricted, appWhitelist: ["com.apple.Terminal", "com.apple.Notes"]),
+            automationQueue: AutomationQueue(),
+            permissionChecker: MockPermissionChecker(accessibility: true, screenRecording: true),
+            brokerClient: MockBrokerClient(),
+            inputAdapter: inputAdapter,
+            windowAdapter: windowAdapter,
+            captureAdapter: MockCaptureAdapter()
+        )
+
+        do {
+            _ = try await executor.callTool(
+                name: "text_input",
+                arguments: .object([
+                    "text": .string("hello"),
+                    "bundle_id": .string("com.apple.Notes"),
+                    "auto_focus": .bool(false),
+                ])
+            )
+            XCTFail("Expected TARGET_NOT_FRONTMOST")
+        } catch let error as MCPToolError {
+            XCTAssertEqual(error.code, JSONRPCErrorCode.toolExecutionFailed)
+            XCTAssertTrue(error.message.contains("TARGET_NOT_FRONTMOST"))
+        }
+
+        let modes = await inputAdapter.modes()
+        XCTAssertTrue(modes.isEmpty)
+        let focusCalls = await windowAdapter.focusCallCount()
+        XCTAssertEqual(focusCalls, 0)
+    }
+
+    func testTextInputTargetWithAutoFocusFocusesAndExecutes() async throws {
+        let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDirectory) }
+
+        let configStore = ConfigStore(configURL: tempDirectory.appendingPathComponent("config.json"))
+        try await configStore.save(AppConfig(defaultMode: .restricted, appWhitelist: ["com.apple.Terminal", "com.apple.Notes"]))
+
+        let inputAdapter = MockInputAdapter()
+        let windowAdapter = MockWindowAdapter(frontmost: "com.apple.Terminal")
+        let executor = OperatorToolExecutor(
+            configStore: configStore,
+            auditLogger: AuditLogger(enabled: false, logURL: tempDirectory.appendingPathComponent("audit.jsonl")),
+            safetyEngine: SafetyEngine(mode: .restricted, appWhitelist: ["com.apple.Terminal", "com.apple.Notes"]),
+            automationQueue: AutomationQueue(),
+            permissionChecker: MockPermissionChecker(accessibility: true, screenRecording: true),
+            brokerClient: MockBrokerClient(),
+            inputAdapter: inputAdapter,
+            windowAdapter: windowAdapter,
+            captureAdapter: MockCaptureAdapter()
+        )
+
+        _ = try await executor.callTool(
+            name: "text_input",
+            arguments: .object([
+                "text": .string("hello"),
+                "bundle_id": .string("com.apple.Notes"),
+                "auto_focus": .bool(true),
+            ])
+        )
+
+        let modes = await inputAdapter.modes()
+        XCTAssertEqual(modes, [.auto])
+        let focusCalls = await windowAdapter.focusCallCount()
+        XCTAssertEqual(focusCalls, 1)
+    }
+
+    func testFocusWindowDefaultDoesNotActivateAllWindows() async throws {
+        let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDirectory) }
+
+        let configStore = ConfigStore(configURL: tempDirectory.appendingPathComponent("config.json"))
+        try await configStore.save(AppConfig(defaultMode: .restricted, appWhitelist: ["com.apple.Notes"]))
+
+        let windowAdapter = MockWindowAdapter(frontmost: "com.apple.Terminal")
+        let executor = OperatorToolExecutor(
+            configStore: configStore,
+            auditLogger: AuditLogger(enabled: false, logURL: tempDirectory.appendingPathComponent("audit.jsonl")),
+            safetyEngine: SafetyEngine(mode: .restricted, appWhitelist: ["com.apple.Terminal", "com.apple.Notes"]),
+            automationQueue: AutomationQueue(),
+            permissionChecker: MockPermissionChecker(accessibility: true, screenRecording: true),
+            brokerClient: MockBrokerClient(),
+            inputAdapter: MockInputAdapter(),
+            windowAdapter: windowAdapter,
+            captureAdapter: MockCaptureAdapter()
+        )
+
+        _ = try await executor.callTool(
+            name: "focus_window",
+            arguments: .object([
+                "bundle_id": .string("com.apple.Notes"),
+            ])
+        )
+        let defaultValue = await windowAdapter.lastActivateAllWindowsValue()
+        XCTAssertEqual(defaultValue, false)
+
+        _ = try await executor.callTool(
+            name: "focus_window",
+            arguments: .object([
+                "bundle_id": .string("com.apple.Notes"),
+                "activate_all_windows": .bool(true),
+            ])
+        )
+        let explicitValue = await windowAdapter.lastActivateAllWindowsValue()
+        XCTAssertEqual(explicitValue, true)
     }
 }

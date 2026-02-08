@@ -42,6 +42,7 @@ public enum ToolSchemas {
                         "window_id": .scalar(.integer),
                         "bundle_id": .scalar(.string),
                         "launch_if_needed": .scalar(.boolean),
+                        "activate_all_windows": .scalar(.boolean),
                     ]
                 )
             ),
@@ -67,6 +68,10 @@ public enum ToolSchemas {
                         "y": .scalar(.number),
                         "button": .enumString(["left", "right", "center"]),
                         "click_count": .scalar(.integer),
+                        "window_id": .scalar(.integer),
+                        "bundle_id": .scalar(.string),
+                        "auto_focus": .scalar(.boolean),
+                        "launch_if_needed": .scalar(.boolean),
                         "risk_class": .enumString(["low", "high"]),
                         "confirmation_token": .scalar(.string),
                     ]
@@ -83,6 +88,10 @@ public enum ToolSchemas {
                         "to_x": .scalar(.number),
                         "to_y": .scalar(.number),
                         "duration_ms": .scalar(.integer),
+                        "window_id": .scalar(.integer),
+                        "bundle_id": .scalar(.string),
+                        "auto_focus": .scalar(.boolean),
+                        "launch_if_needed": .scalar(.boolean),
                         "risk_class": .enumString(["low", "high"]),
                         "confirmation_token": .scalar(.string),
                     ]
@@ -96,6 +105,10 @@ public enum ToolSchemas {
                     properties: [
                         "delta_x": .scalar(.number),
                         "delta_y": .scalar(.number),
+                        "window_id": .scalar(.integer),
+                        "bundle_id": .scalar(.string),
+                        "auto_focus": .scalar(.boolean),
+                        "launch_if_needed": .scalar(.boolean),
                         "risk_class": .enumString(["low", "high"]),
                         "confirmation_token": .scalar(.string),
                     ]
@@ -109,6 +122,10 @@ public enum ToolSchemas {
                     properties: [
                         "text": .scalar(.string),
                         "mode": .enumString(["auto", "paste", "keystroke"]),
+                        "window_id": .scalar(.integer),
+                        "bundle_id": .scalar(.string),
+                        "auto_focus": .scalar(.boolean),
+                        "launch_if_needed": .scalar(.boolean),
                         "risk_class": .enumString(["low", "high"]),
                         "confirmation_token": .scalar(.string),
                     ]
@@ -122,6 +139,10 @@ public enum ToolSchemas {
                     properties: [
                         "keys": .array(of: .scalar(.string)),
                         "repeat": .scalar(.integer),
+                        "window_id": .scalar(.integer),
+                        "bundle_id": .scalar(.string),
+                        "auto_focus": .scalar(.boolean),
+                        "launch_if_needed": .scalar(.boolean),
                         "risk_class": .enumString(["low", "high"]),
                         "confirmation_token": .scalar(.string),
                     ]

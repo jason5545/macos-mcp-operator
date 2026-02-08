@@ -17,7 +17,12 @@ public protocol InputAdapting: Sendable {
 
 public protocol WindowAdapting: Sendable {
     func listWindows(includeMinimized: Bool) async -> [WindowDescriptor]
-    func focusWindow(windowID: UInt32?, bundleID: String?, launchIfNeeded: Bool) async throws -> String?
+    func focusWindow(
+        windowID: UInt32?,
+        bundleID: String?,
+        launchIfNeeded: Bool,
+        activateAllWindows: Bool
+    ) async throws -> String?
     func frontmostBundleID() async -> String?
 }
 

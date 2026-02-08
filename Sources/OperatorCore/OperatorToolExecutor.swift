@@ -23,6 +23,13 @@ public actor OperatorToolExecutor: ToolExecutorProtocol {
     private let windowAdapter: WindowAdapting
     private let captureAdapter: CaptureAdapting
 
+    private struct InteractionTarget {
+        let windowID: UInt32?
+        let bundleID: String?
+        let autoFocus: Bool
+        let launchIfNeeded: Bool
+    }
+
     public init(
         tools: [ToolDefinition] = ToolSchemas.allTools(),
         configStore: ConfigStore,
@@ -199,6 +206,7 @@ public actor OperatorToolExecutor: ToolExecutorProtocol {
 
         let bundleID = optionalString(arguments, key: "bundle_id")
         let launchIfNeeded = optionalBool(arguments, key: "launch_if_needed") ?? false
+        let activateAllWindows = optionalBool(arguments, key: "activate_all_windows") ?? false
 
         guard windowID != nil || bundleID != nil else {
             throw MCPToolError.invalidParams("focus_window requires window_id or bundle_id")
@@ -219,6 +227,7 @@ public actor OperatorToolExecutor: ToolExecutorProtocol {
                 "window_id": windowID.map(String.init) ?? "",
                 "bundle_id": bundleID ?? "",
                 "launch_if_needed": String(launchIfNeeded),
+                "activate_all_windows": String(activateAllWindows),
             ]
         )
 
@@ -230,7 +239,8 @@ public actor OperatorToolExecutor: ToolExecutorProtocol {
             let focusedBundle = try await self.windowAdapter.focusWindow(
                 windowID: windowID,
                 bundleID: bundleID,
-                launchIfNeeded: launchIfNeeded
+                launchIfNeeded: launchIfNeeded,
+                activateAllWindows: activateAllWindows
             )
 
             return ActionReceipt(
@@ -304,7 +314,7 @@ public actor OperatorToolExecutor: ToolExecutorProtocol {
         let clickCount = optionalInt(arguments, key: "click_count") ?? 1
         let riskClass = RiskClass(rawValue: optionalString(arguments, key: "risk_class") ?? "low") ?? .low
         let confirmationToken = optionalString(arguments, key: "confirmation_token")
-        let targetBundle = await windowAdapter.frontmostBundleID()
+        let targetBundle = try await resolveTargetBundleForInteraction(arguments, toolName: "mouse_click")
 
         let decision = await evaluateSafety(
             toolName: "mouse_click",
@@ -316,6 +326,10 @@ public actor OperatorToolExecutor: ToolExecutorProtocol {
                 "y": String(y),
                 "button": button.rawValue,
                 "click_count": String(clickCount),
+                "window_id": optionalInt(arguments, key: "window_id").map(String.init) ?? "",
+                "bundle_id": optionalString(arguments, key: "bundle_id") ?? "",
+                "auto_focus": String(optionalBool(arguments, key: "auto_focus") ?? false),
+                "launch_if_needed": String(optionalBool(arguments, key: "launch_if_needed") ?? false),
             ]
         )
 
@@ -351,7 +365,7 @@ public actor OperatorToolExecutor: ToolExecutorProtocol {
         let durationMS = optionalInt(arguments, key: "duration_ms") ?? 150
         let riskClass = RiskClass(rawValue: optionalString(arguments, key: "risk_class") ?? "low") ?? .low
         let confirmationToken = optionalString(arguments, key: "confirmation_token")
-        let targetBundle = await windowAdapter.frontmostBundleID()
+        let targetBundle = try await resolveTargetBundleForInteraction(arguments, toolName: "mouse_drag")
 
         let decision = await evaluateSafety(
             toolName: "mouse_drag",
@@ -364,6 +378,10 @@ public actor OperatorToolExecutor: ToolExecutorProtocol {
                 "to_x": String(toX),
                 "to_y": String(toY),
                 "duration_ms": String(durationMS),
+                "window_id": optionalInt(arguments, key: "window_id").map(String.init) ?? "",
+                "bundle_id": optionalString(arguments, key: "bundle_id") ?? "",
+                "auto_focus": String(optionalBool(arguments, key: "auto_focus") ?? false),
+                "launch_if_needed": String(optionalBool(arguments, key: "launch_if_needed") ?? false),
             ]
         )
         if let decision {
@@ -395,14 +413,21 @@ public actor OperatorToolExecutor: ToolExecutorProtocol {
         let deltaY = try requiredDouble(arguments, key: "delta_y")
         let riskClass = RiskClass(rawValue: optionalString(arguments, key: "risk_class") ?? "low") ?? .low
         let confirmationToken = optionalString(arguments, key: "confirmation_token")
-        let targetBundle = await windowAdapter.frontmostBundleID()
+        let targetBundle = try await resolveTargetBundleForInteraction(arguments, toolName: "mouse_scroll")
 
         let decision = await evaluateSafety(
             toolName: "mouse_scroll",
             riskClass: riskClass,
             confirmationToken: confirmationToken,
             targetBundleID: targetBundle,
-            arguments: ["delta_x": String(deltaX), "delta_y": String(deltaY)]
+            arguments: [
+                "delta_x": String(deltaX),
+                "delta_y": String(deltaY),
+                "window_id": optionalInt(arguments, key: "window_id").map(String.init) ?? "",
+                "bundle_id": optionalString(arguments, key: "bundle_id") ?? "",
+                "auto_focus": String(optionalBool(arguments, key: "auto_focus") ?? false),
+                "launch_if_needed": String(optionalBool(arguments, key: "launch_if_needed") ?? false),
+            ]
         )
         if let decision {
             return decision
@@ -433,14 +458,21 @@ public actor OperatorToolExecutor: ToolExecutorProtocol {
         let mode = TextInputMode(rawValue: optionalString(arguments, key: "mode") ?? "auto") ?? .auto
         let riskClass = RiskClass(rawValue: optionalString(arguments, key: "risk_class") ?? "low") ?? .low
         let confirmationToken = optionalString(arguments, key: "confirmation_token")
-        let targetBundle = await windowAdapter.frontmostBundleID()
+        let targetBundle = try await resolveTargetBundleForInteraction(arguments, toolName: "text_input")
 
         let decision = await evaluateSafety(
             toolName: "text_input",
             riskClass: riskClass,
             confirmationToken: confirmationToken,
             targetBundleID: targetBundle,
-            arguments: ["text": text, "mode": mode.rawValue]
+            arguments: [
+                "text": text,
+                "mode": mode.rawValue,
+                "window_id": optionalInt(arguments, key: "window_id").map(String.init) ?? "",
+                "bundle_id": optionalString(arguments, key: "bundle_id") ?? "",
+                "auto_focus": String(optionalBool(arguments, key: "auto_focus") ?? false),
+                "launch_if_needed": String(optionalBool(arguments, key: "launch_if_needed") ?? false),
+            ]
         )
         if let decision {
             return decision
@@ -477,13 +509,20 @@ public actor OperatorToolExecutor: ToolExecutorProtocol {
         let normalizedCurrent = normalizeKeyChord(keys)
         let riskClass: RiskClass = normalizedDangerous.contains(normalizedCurrent) ? .high : incomingRisk
 
-        let targetBundle = await windowAdapter.frontmostBundleID()
+        let targetBundle = try await resolveTargetBundleForInteraction(arguments, toolName: "key_chord")
         let decision = await evaluateSafety(
             toolName: "key_chord",
             riskClass: riskClass,
             confirmationToken: confirmationToken,
             targetBundleID: targetBundle,
-            arguments: ["keys": normalizedCurrent, "repeat": String(repeatCount)]
+            arguments: [
+                "keys": normalizedCurrent,
+                "repeat": String(repeatCount),
+                "window_id": optionalInt(arguments, key: "window_id").map(String.init) ?? "",
+                "bundle_id": optionalString(arguments, key: "bundle_id") ?? "",
+                "auto_focus": String(optionalBool(arguments, key: "auto_focus") ?? false),
+                "launch_if_needed": String(optionalBool(arguments, key: "launch_if_needed") ?? false),
+            ]
         )
         if let decision {
             return decision
@@ -1093,6 +1132,58 @@ public actor OperatorToolExecutor: ToolExecutorProtocol {
         guard let windowID else { return nil }
         let windows = await windowAdapter.listWindows(includeMinimized: true)
         return windows.first(where: { $0.windowID == windowID })?.bundleID
+    }
+
+    private func resolveTargetBundleForInteraction(_ arguments: JSONValue?, toolName: String) async throws -> String? {
+        let target = parseInteractionTarget(arguments)
+        let frontmostBundle = await windowAdapter.frontmostBundleID()
+
+        guard target.windowID != nil || target.bundleID != nil else {
+            return frontmostBundle
+        }
+
+        let targetBundle: String?
+        if let bundleID = target.bundleID {
+            targetBundle = bundleID
+        } else {
+            targetBundle = await bundleIDForWindow(target.windowID)
+        }
+        guard let targetBundle else {
+            throw MCPToolError.executionFailed("TARGET_UNRESOLVED: unable to resolve target bundle for \(toolName)")
+        }
+
+        if frontmostBundle == targetBundle {
+            return targetBundle
+        }
+
+        guard target.autoFocus else {
+            throw MCPToolError.executionFailed(
+                "TARGET_NOT_FRONTMOST: \(targetBundle) is not frontmost. Set auto_focus=true to focus before \(toolName)."
+            )
+        }
+
+        _ = try await windowAdapter.focusWindow(
+            windowID: target.windowID,
+            bundleID: target.bundleID,
+            launchIfNeeded: target.launchIfNeeded,
+            activateAllWindows: false
+        )
+
+        return await windowAdapter.frontmostBundleID() ?? targetBundle
+    }
+
+    private func parseInteractionTarget(_ arguments: JSONValue?) -> InteractionTarget {
+        let windowID = optionalInt(arguments, key: "window_id").map(UInt32.init)
+        let bundleID = optionalString(arguments, key: "bundle_id")
+        let autoFocus = optionalBool(arguments, key: "auto_focus") ?? false
+        let launchIfNeeded = optionalBool(arguments, key: "launch_if_needed") ?? false
+
+        return InteractionTarget(
+            windowID: windowID,
+            bundleID: bundleID,
+            autoFocus: autoFocus,
+            launchIfNeeded: launchIfNeeded
+        )
     }
 
     private func normalizeKeyChord(_ keys: [String]) -> String {
